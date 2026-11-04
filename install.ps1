@@ -2,7 +2,7 @@
 # SHS Launcher - 2-Factor Secure Cloud Installer
 # Faktor 1: Live-Freigabe auf GitHub (Device Flow, isoliert auf SHS_Vault)
 # Faktor 2: AES-256 + HMAC-SHA256 Installations-Passwort
-# Copyright (c) Erdem Karayay (ErdoSoft)
+# Copyright (c) Erdem Karayay
 # One-Liner: irm https://raw.githubusercontent.com/ErdoSoft/SHS_Setup/main/install.ps1 | iex
 # ==============================================================================
 
@@ -39,6 +39,7 @@ function Invoke-SHSCloudInstaller {
     $blkLight = [string][char]0x2591
     $chkMark  = [string][char]0x2713
     $copySym  = [string][char]0x00A9
+    $tmSym    = [string][char]0x2122
 
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -54,7 +55,7 @@ function Invoke-SHSCloudInstaller {
         Write-Host " | |___|  _ <| |_| | |___| |  | | | . \  / ___ \|  _ < / ___ \| |  / ___ \| |  " -ForegroundColor DarkCyan
         Write-Host " |_____|_| \_\____/|_____|_|  |_| |_|\_\/_/   \_\_| \_/_/   \_\_| /_/   \_\_|  " -ForegroundColor DarkCyan
         Write-Host " ==============================================================================" -ForegroundColor DarkGray
-        Write-Host "   SHS LAUNCHER  |  2FA SECURE CLOUD INSTALLER  |  $copySym ERDEM KARAYAY (ErdoSoft)" -ForegroundColor Yellow
+        Write-Host "   SHS LAUNCHER  |  2FA SECURE CLOUD INSTALLER  |  ERDEM KARAYAY$tmSym" -ForegroundColor Yellow
         Write-Host " ==============================================================================" -ForegroundColor DarkGray
         Write-Host "   PC: $env:COMPUTERNAME   |   Benutzer: $env:USERNAME   |   Ziel: $(Join-Path $TargetDir $ExeName)" -ForegroundColor Gray
         Write-Host " ------------------------------------------------------------------------------" -ForegroundColor DarkGray
@@ -136,7 +137,7 @@ function Invoke-SHSCloudInstaller {
         $req = [System.Net.HttpWebRequest]::Create($AssetApiUrl)
         $req.Method = "GET"
         $req.Accept = "application/octet-stream"
-        $req.UserAgent = "SHS-Cloud-Installer/2.0 (ErdoSoft)"
+        $req.UserAgent = "SHS-Cloud-Installer/2.0"
         $req.Headers.Add("Authorization", "Bearer $BearerToken")
         $req.Headers.Add("X-GitHub-Api-Version", "2022-11-28")
         $req.AllowAutoRedirect = $false
@@ -203,7 +204,7 @@ function Invoke-SHSCloudInstaller {
 
             $dcHeaders = @{
                 "Accept"     = "application/json"
-                "User-Agent" = "SHS-Cloud-Installer/2.0 (ErdoSoft)"
+                "User-Agent" = "SHS-Cloud-Installer/2.0"
             }
             $dcBody = "client_id=" + [Uri]::EscapeDataString($GitHubAppClientId)
             $dcResp = Invoke-WebRequest -Method Post -Uri "https://github.com/login/device/code" -Headers $dcHeaders -Body $dcBody -ContentType "application/x-www-form-urlencoded" -UseBasicParsing -TimeoutSec 20
@@ -303,7 +304,7 @@ function Invoke-SHSCloudInstaller {
                 $mHeaders = @{
                     "Authorization"        = "Bearer $ephemeralDeviceToken"
                     "Accept"               = "application/vnd.github.raw+json"
-                    "User-Agent"           = "SHS-Cloud-Installer/2.0 (ErdoSoft)"
+                    "User-Agent"           = "SHS-Cloud-Installer/2.0"
                     "X-GitHub-Api-Version" = "2022-11-28"
                 }
                 $mResp = Invoke-WebRequest -Method Get -Uri $vaultManifestApi -Headers $mHeaders -UseBasicParsing -TimeoutSec 20
@@ -406,7 +407,7 @@ function Invoke-SHSCloudInstaller {
                 $req = [System.Net.HttpWebRequest]::Create($signedDownloadUrl)
                 $req.Method = "GET"
                 $req.AllowAutoRedirect = $true
-                $req.UserAgent = "SHS-Cloud-Installer/2.0 (ErdoSoft)"
+                $req.UserAgent = "SHS-Cloud-Installer/2.0"
                 $req.Timeout = 60000
                 $req.ReadWriteTimeout = 60000
 
@@ -831,7 +832,7 @@ function Invoke-SHSCloudInstaller {
         if ($taskDisplay.Length -gt 54) { $taskDisplay = $taskDisplay.Substring(0, 51) + "..." }
         Write-Host ("  |  Aufgabenplanung:  {0,-54}|" -f $taskDisplay) -ForegroundColor White
         Write-Host ("  |  Sicherheit:       2-Faktor (GitHub Live-Freigabe + AES-256)             |") -ForegroundColor White
-        Write-Host ("  |  Bereitgestellt:   $copySym Erdem Karayay (ErdoSoft)                            |") -ForegroundColor Yellow
+        Write-Host ("  |  Bereitgestellt:   {0,-54}|" -f ("Erdem Karayay" + $tmSym)) -ForegroundColor Yellow
         Write-Host "  +--------------------------------------------------------------------------+" -ForegroundColor Green
         Write-Host ""
 
