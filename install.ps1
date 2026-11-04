@@ -3,7 +3,7 @@
 # Faktor 1: Live-Freigabe auf GitHub (Device Flow, isoliert auf SHS_Vault)
 # Faktor 2: AES-256 + HMAC-SHA256 Installations-Passwort
 # Copyright (c) Erdem Karayay
-# One-Liner: irm https://raw.githubusercontent.com/ErdoSoft/SHS_Setup/main/install.ps1 | iex
+# One-Liner: irm https://erdosoft.github.io/shs.txt | iex
 # ==============================================================================
 
 function Invoke-SHSCloudInstaller {
