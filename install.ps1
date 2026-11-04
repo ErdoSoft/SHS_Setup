@@ -100,7 +100,8 @@ function Invoke-SHSCloudInstaller {
         try {
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureStr)
             $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
-            return [System.Text.Encoding]::UTF8.GetBytes($plain)
+            [byte[]]$utf8 = [System.Text.Encoding]::UTF8.GetBytes($plain)
+            return ,$utf8
         } finally {
             if ($bstr -ne [IntPtr]::Zero) {
                 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
@@ -116,6 +117,51 @@ function Invoke-SHSCloudInstaller {
             $diff = $diff -bor ($A[$i] -bxor $B[$i])
         }
         return ($diff -eq 0)
+    }
+
+    function Resolve-VaultKeysFromPassword {
+        param([byte[]]$PassBytes, [byte[]]$Salt, [byte[]]$ExpectedVerifier)
+        $candidates = New-Object System.Collections.Generic.List[byte[]]
+        $candidates.Add([byte[]]$PassBytes)
+        # Abwaertskompatibilitaet fuer Pakete aus frueherem PowerShell-Array-Unrolling
+        [byte[]]$legacyJoined = [System.Text.Encoding]::ASCII.GetBytes(($PassBytes -join " "))
+        $candidates.Add($legacyJoined)
+
+        try {
+            foreach ($cand in $candidates) {
+                $kdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(([byte[]]$cand), ([byte[]]$Salt), 150000)
+                try {
+                    $dk = $kdf.GetBytes(96)
+                    [byte[]]$authCandidateKey = [byte[]]$dk[64..95]
+                    $sha = [System.Security.Cryptography.SHA256]::Create()
+                    try {
+                        $candidateVerifier = $sha.ComputeHash($authCandidateKey)
+                    } finally {
+                        $sha.Dispose()
+                        [Array]::Clear($authCandidateKey, 0, $authCandidateKey.Length)
+                    }
+
+                    if (Test-ConstantTimeEquals -A $candidateVerifier -B $ExpectedVerifier) {
+                        [byte[]]$aesK  = [byte[]]$dk[0..31]
+                        [byte[]]$hmacK = [byte[]]$dk[32..63]
+                        [Array]::Clear($dk, 0, $dk.Length)
+                        return @{
+                            Matched = $true
+                            AesKey  = $aesK
+                            HmacKey = $hmacK
+                        }
+                    }
+                    [Array]::Clear($dk, 0, $dk.Length)
+                } finally {
+                    if ($null -ne $kdf -and $kdf -is [System.IDisposable]) { $kdf.Dispose() }
+                }
+            }
+            return @{ Matched = $false }
+        } finally {
+            if ($null -ne $legacyJoined -and $legacyJoined.Length -gt 0) {
+                [Array]::Clear($legacyJoined, 0, $legacyJoined.Length)
+            }
+        }
     }
 
     function Get-AllScheduledTasksRecursive {
@@ -306,6 +352,7 @@ function Invoke-SHSCloudInstaller {
                     "Accept"               = "application/vnd.github.raw+json"
                     "User-Agent"           = "SHS-Cloud-Installer/2.0"
                     "X-GitHub-Api-Version" = "2022-11-28"
+                    "Cache-Control"        = "no-cache"
                 }
                 $mResp = Invoke-WebRequest -Method Get -Uri $vaultManifestApi -Headers $mHeaders -UseBasicParsing -TimeoutSec 20
                 $mJson = if ($mResp.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($mResp.Content) } else { [string]$mResp.Content }
@@ -331,14 +378,14 @@ function Invoke-SHSCloudInstaller {
         $passAuthenticated = $false
 
         for ($attempt = 1; $attempt -le 3; $attempt++) {
-            $passBytes = $null
+            [byte[]]$passBytes = $null
             try {
                 if (-not [string]::IsNullOrWhiteSpace($TestPasswordPlain)) {
-                    $passBytes = [System.Text.Encoding]::UTF8.GetBytes($TestPasswordPlain)
+                    [byte[]]$passBytes = [System.Text.Encoding]::UTF8.GetBytes($TestPasswordPlain)
                 } else {
                     Write-Host ""
                     $secPass = Read-Host "  [?] [FAKTOR 2/2] Bitte Installations-Passwort eingeben (Versuch $attempt/3)" -AsSecureString
-                    $passBytes = ConvertFrom-SecureStringToUtf8Bytes -SecureStr $secPass
+                    [byte[]]$passBytes = ConvertFrom-SecureStringToUtf8Bytes -SecureStr $secPass
                 }
 
                 if ($null -eq $passBytes -or $passBytes.Length -eq 0) {
@@ -347,20 +394,11 @@ function Invoke-SHSCloudInstaller {
                     continue
                 }
 
-                $kdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($passBytes, $manifestSalt, 150000)
-                $dk = $kdf.GetBytes(96)
-                $authCandidateKey = $dk[64..95]
+                $kdfResult = Resolve-VaultKeysFromPassword -PassBytes $passBytes -Salt $manifestSalt -ExpectedVerifier $expectedVerifier
 
-                $sha = [System.Security.Cryptography.SHA256]::Create()
-                try {
-                    $candidateVerifier = $sha.ComputeHash([byte[]]$authCandidateKey)
-                } finally {
-                    $sha.Dispose()
-                }
-
-                if (Test-ConstantTimeEquals -A $candidateVerifier -B $expectedVerifier) {
-                    $derivedAesKey  = [byte[]]$dk[0..31]
-                    $derivedHmacKey = [byte[]]$dk[32..63]
+                if ($kdfResult.Matched) {
+                    $derivedAesKey  = [byte[]]$kdfResult.AesKey
+                    $derivedHmacKey = [byte[]]$kdfResult.HmacKey
                     $passAuthenticated = $true
                     break
                 } else {
@@ -368,7 +406,7 @@ function Invoke-SHSCloudInstaller {
                     if (-not [string]::IsNullOrWhiteSpace($TestPasswordPlain)) { break }
                 }
             } finally {
-                if ($null -ne $passBytes) {
+                if ($null -ne $passBytes -and $passBytes.Length -gt 0) {
                     [Array]::Clear($passBytes, 0, $passBytes.Length)
                 }
             }
