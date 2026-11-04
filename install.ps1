@@ -901,6 +901,13 @@ function Invoke-SHSCloudInstaller {
 
         if ($choice -match '^[JjYy]') {
             Wait-SHSWebViewProcessesClosed -GraceTimeoutMs 6000
+            if (-not (Get-Process -Name "explorer" -ErrorAction SilentlyContinue)) {
+                try {
+                    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoRestartShell" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+                    Start-Process -FilePath (Join-Path $env:WINDIR "explorer.exe")
+                    Start-Sleep -Milliseconds 1200
+                } catch {}
+            }
             Write-Host "  [>>] Starte $finalExePath ..." -ForegroundColor Cyan
             Start-Process -FilePath $finalExePath -WorkingDirectory $TargetDir -Verb RunAs
         } else {
