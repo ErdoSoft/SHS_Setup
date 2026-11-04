@@ -164,6 +164,25 @@ function Invoke-SHSCloudInstaller {
         }
     }
 
+    function Wait-SHSWebViewProcessesClosed {
+        param([int]$GraceTimeoutMs = 6000)
+        $swWv = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($swWv.ElapsedMilliseconds -lt $GraceTimeoutMs) {
+            $wvProcs = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -like '*SHS_Launcher_Data*' })
+            if ($wvProcs.Count -eq 0) { return }
+            Start-Sleep -Milliseconds 250
+        }
+        $leftover = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like '*SHS_Launcher_Data*' })
+        if ($leftover.Count -gt 0) {
+            foreach ($lp in $leftover) {
+                try { Stop-Process -Id $lp.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+            }
+            Start-Sleep -Milliseconds 600
+        }
+    }
+
     function Get-AllScheduledTasksRecursive {
         param($Folder)
         $result = @()
@@ -672,11 +691,12 @@ function Invoke-SHSCloudInstaller {
 
         if ($stoppedAny) {
             Start-Sleep -Milliseconds 1200
+            Wait-SHSWebViewProcessesClosed -GraceTimeoutMs 6000
             try {
                 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DisableTaskMgr" -ErrorAction SilentlyContinue
                 Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AutoRestartShell" -Value 1 -Type DWord -ErrorAction SilentlyContinue
             } catch {}
-            Write-StepDone "Laufende Vorg$($lowAe)ngerversion sauber beendet."
+            Write-StepDone "Laufende Vorg$($lowAe)ngerversion inkl. Browser-Prozessen sauber beendet."
         }
 
         if (-not (Test-Path $TargetDir)) {
@@ -880,6 +900,7 @@ function Invoke-SHSCloudInstaller {
         }
 
         if ($choice -match '^[JjYy]') {
+            Wait-SHSWebViewProcessesClosed -GraceTimeoutMs 6000
             Write-Host "  [>>] Starte $finalExePath ..." -ForegroundColor Cyan
             Start-Process -FilePath $finalExePath -WorkingDirectory $TargetDir -Verb RunAs
         } else {
